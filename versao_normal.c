@@ -63,7 +63,7 @@ unsigned int count_primes_range(unsigned long long inicio,
 int main(int argc, char *argv[])
 {
     unsigned long long inicio_global = 1;
-    unsigned long long fim_global = 100000000ULL;
+    unsigned long long fim_global = 100000000ULL; // 1e8
 
     MPI_Init(&argc, &argv);
 
@@ -71,6 +71,11 @@ int main(int argc, char *argv[])
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+    // ------------------ MEDIR TEMPO PARALELO ------------------
+    MPI_Barrier(MPI_COMM_WORLD);
+    double t_paralelo_ini = MPI_Wtime();
+
+    // ------------------ DIVISÃO DO INTERVALO ------------------
     unsigned long long inicio_local, fim_local;
     unsigned long long bloco = (fim_global - inicio_global + 1) / 4;
 
@@ -98,17 +103,48 @@ int main(int argc, char *argv[])
     printf("Rank %d executando intervalo [%llu, %llu]\n",
            rank, inicio_local, fim_local);
 
+    // ------------------ EXECUÇÃO LOCAL -----------------------
     unsigned int local_count = count_primes_range(inicio_local, fim_local);
 
-    // --------------- Redução: rank 0 soma tudo ---------------------------
+    // ------------------ REDUCE: SOMA TOTAL -------------------
     unsigned int total_count = 0;
     MPI_Reduce(&local_count, &total_count, 1,
                MPI_UNSIGNED, MPI_SUM, 0, MPI_COMM_WORLD);
 
+    // ------------------ MEDIR TEMPO FINAL PARALELO -----------
+    MPI_Barrier(MPI_COMM_WORLD);
+    double t_paralelo_fim = MPI_Wtime();
+
+    // ------------------ RESULTADO PARALELO -------------------
     if (rank == 0)
     {
-        printf("\nTotal de primos no intervalo [%llu, %llu]: %u\n",
-               inicio_global, fim_global, total_count);
+        double tempo_paralelo = t_paralelo_fim - t_paralelo_ini;
+
+        printf("\n=== RESULTADO PARALELO ===\n");
+        printf("Total de primos: %u\n", total_count);
+        printf("Tempo paralelo: %.6f segundos\n\n", tempo_paralelo);
+
+        // ===================== VERSÃO SEQUENCIAL ======================
+        printf("Executando versão sequencial...\n");
+
+        double t_seq_ini = MPI_Wtime();
+        unsigned int seq = count_primes_range(inicio_global, fim_global);
+        double t_seq_fim = MPI_Wtime();
+
+        double tempo_sequencial = t_seq_fim - t_seq_ini;
+
+        printf("\n=== RESULTADO SEQUENCIAL ===\n");
+        printf("Total de primos: %u\n", seq);
+        printf("Tempo sequencial: %.6f segundos\n\n", tempo_sequencial);
+
+        // ===================== SPEEDUP E EFICIÊNCIA ===================
+        double speedup = tempo_sequencial / tempo_paralelo;
+        double eficiencia = speedup / size;
+
+        printf("=== MÉTRICAS ===\n");
+        printf("Speedup: %.4f\n", speedup);
+        printf("Eficiência: %.4f (%.2f%%)\n",
+               eficiencia, eficiencia * 100.0);
     }
 
     MPI_Finalize();
